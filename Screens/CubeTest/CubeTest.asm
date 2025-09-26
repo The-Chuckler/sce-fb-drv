@@ -10,33 +10,33 @@
 
 
 GM_CubeTest:
-        music	mus_Stop									; stop music
-		jsr	(Clear_KosPlus_Module_Queue).w							; clear KosPlusM PLCs
-		ResetDMAQueue										; clear DMA queue
-		jsr	(Pal_FadeToBlack).w
-		disableInts
-		move.l	#VInt,(V_int_addr).w
-		move.l	#HInt,(H_int_addr).w
-		disableScreen
-		jsr	(Clear_DisplayData).w
-		lea	Level_VDP(pc),a1
-		jsr	(Load_VDP).w
-		jsr	(Clear_Palette).w
-		clearRAM RAM_start, (RAM_start+$2000)							; clear foreground buffers
-		clearRAM Object_RAM, Object_RAM_end							; clear the object RAM
-		clearRAM Lag_frame_count, Lag_frame_count_end						; clear variables
-		clearRAM Camera_RAM, Camera_RAM_end							; clear the camera RAM
-		clearRAM Oscillating_variables, Oscillating_variables_end				; clear variables
+ music	mus_Stop									; stop music
+ jsr	(Clear_KosPlus_Module_Queue).w							; clear KosPlusM PLCs
+ ResetDMAQueue										; clear DMA queue
+ jsr	(Pal_FadeToBlack).w
+ disableInts
+ move.l	#VInt,(V_int_addr).w
+ move.l	#HInt,(H_int_addr).w
+ disableScreen
+ jsr	(Clear_DisplayData).w
+ lea	Level_VDP(pc),a1
+ jsr	(Load_VDP).w
+ jsr	(Clear_Palette).w
+ clearRAM RAM_start, (RAM_start+$2000)							; clear foreground buffers
+ clearRAM Object_RAM, Object_RAM_end							; clear the object RAM
+ clearRAM Lag_frame_count, Lag_frame_count_end						; clear variables
+ clearRAM Camera_RAM, Camera_RAM_end							; clear the camera RAM
+ clearRAM Oscillating_variables, Oscillating_variables_end				; clear variables
 
-		; clear
-		move.b	d0,(Water_full_screen_flag).w
-		move.b	d0,(Water_flag).w
-		move.w	d0,(Current_zone_and_act).w
-		move.w	d0,(Apparent_zone_and_act).w
-		move.b	d0,(Last_star_post_hit).w
-		move.b	d0,(Debug_mode_flag).w
+	; clear
+ move.b	d0,(Water_full_screen_flag).w
+ move.b	d0,(Water_flag).w
+ move.w	d0,(Current_zone_and_act).w
+ move.w	d0,(Apparent_zone_and_act).w
+ move.b	d0,(Last_star_post_hit).w
+ move.b	d0,(Debug_mode_flag).w
 
-; load main palette
+	; load main palette
  lea (Pal_Custom4TitCrd).l,a1
  lea	(Target_palette).w,a2
  jsr	(PalLoad_Line32).w
@@ -57,7 +57,7 @@ GM_CubeTest:
 
 scrbufsz = (ArtUnc_PlH_end - ArtUnc_PlH)
 
-; Load uncompressed art:
+	; Load uncompressed art:
  lea (ArtUnc_PlH).l,a0
  lea (ScrRAMbuff).l,a1
  move.w #bytesToLcnt(scrbufsz),d0
@@ -74,22 +74,31 @@ scrbufsz = (ArtUnc_PlH_end - ArtUnc_PlH)
  move.b	#VintID_Menu,(V_int_routine).w
  jsr	(Wait_VSync).w
 
-	; Demo pixel plot:
-    ; Test format: d0=xpos, d1=ypos,color
- move.w #0231,d0
+; These couldn't have been positioned better.
+; Macro definitions:
 
-; try to update screen after pixel was plotted
- tst.b (Ctrl_1_held).w
- bpl.s +
- add.w #25,d0
-+
+	; Sync ram buffer with on-screen one:
+RefreshScreen macro
+  QueueStaticDMA ScrRAMbuff,scrbufsz,$0*$20
+ endm
 
- moveq #0,d1
- move.b #$0A,d1
- moveq #0,d4
- move.b #$0f,d4
-	; "sys"call: screen driver:
+	; TODO: Clear the entire ram buffer:
+
+	; Take x,y,color info to plot pixel
+	; on screen (hot garbage):
+PlotPx macro xpos,ypos,col
+ move.w xpos,d0
+ move.b ypos,d1
+ move.b col,d4
+
  bsr.s DoPixelStuff
+ endm
+
+	; Test pixel:
+ PlotPx #231,#$0A,#$0F
+
+	; reload plane after changing ram map:
+ RefreshScreen
 
  bra.s .loop
 
@@ -100,75 +109,97 @@ ScrRAMbuff = Chunk_table
 
 
 ; Okay, so, what does this routine take?
+; We take screen pixel x,y coordinates and
+; transform them into an offset we can put
+; in our one-dimensional array, which is a copy
+; of the screen tiles.
 ; d0 is the x position, 0 being the left most
 ; pixel and so on.
 ; d1 is the y position, 0 is at the top of the
 ; screen and the first y pixel.
 ; d4 is the color.
-; d2,d3 are used for various other things
-; bit masks, division remainders etc.
+; d2 is used internally for the remainders
+; of divisions, and
+; d3 is the bit mask we AND numbers with.
 DoPixelStuff:
 	; horizontal evenness check one:
  btst #0,d0
  beq.s .XposEven
- bclr #31,d4
+ bset #7,d4
 
 .XposEven
+
+; ===========================================
 	; xpos code:
- move.w d0,d2 ; d2 = d0
- move.w #$FFFF-7,d3 ; d3 = mask
- and.w d3,d0 ; d0 = xpos no remainder
- not.w d3    ; flip bit mask, 0000000000000111
- and.w d3,d2 ; d2 = remainder
- lsl.w #2,d0 ; d0 = xpos/8*sizeoftile(=d0*4)
- lsr.w d2    ; d2/2=xoff(in bytes)
- or.w d2,d0  ; add remainder, d0=fullxpos
+ move.w d0,d2	; copy d0 to d2
+ moveq #7,d3	; d3 is our bit mask
 
-	; ypos code:
- moveq #0,d3
- move.b #%00000111,d3
- moveq #0,d2
- move.b d1,d2
- and.b d3,d2    ; leave d2 as remainder
- not.b d3	; flip mask for y - remainder
- and.b d3,d1	; d1 = no remainder y
- lsl.b #2,d2	; d2 *= 4
- lsr.b #2,d1	; d1 /= 4 (*2 for word table)
+ and.w d3,d2	; d2 is the remainder of xpos/8
+ not.w d3	; mask other part of number
+ and.w d3,d0	; d0 now has no remainder.
+
+ lsl.w #2,d0	; xpos/8*32, number of horizontal
+		; pixels in a tile * size of tile
+ lsr.w d2	; Bytes each contain two pixels,
+		; so we divide our pixels by 2
+		; to know what byte to land on.
+
+ or.w d2,d0	; Add both positons into one
+
+; ===========================================
+	; Begin calculating our y offset:
+ move.b d1,d2	; separate remainder ofc
+ and.b d3,d1    ; d1 has no remainder, then
+ not.b d3	; flip our mask around and
+ and.b d3,d2	; have d2 as the remainder.
+ lsl.b #2,d2	; smol offset * tile length
+		; in bytes
+ lsr.b #2,d1	; We divide our ypos by the
+		; number of pixels in a tile(8)
+		; then *2 bc we use word table
+
  move.w CoolTable(pc,d1.w),d1
- add.w d2,d1	; add back in-tile pos
+ or.w d2,d1	; add back in-tile pos
 
-	; Put pixel in ram address:
+; ===========================================
+	; Color pixel at calculated offset:
  lea (ScrRAMbuff).l,a0
  add.w d0,a0    ; increase offset horizontally
  add.w d1,a0	; increase offset vertically
  move.b (a0),d2
- move.b #%11110000,d3
- btst #31,d4
+
+ not.b d3	; bit mask our beloved
+ lsl.b d3
+ btst #7,d4
+ bclr #7,d4	; cheeky little trick >:3
  bne.s .XposUnEven
-; EVEN ONLY CODE:
+
+	; when our position is even:
  not.b d3
  lsl.b #4,d4
 
 .XposUnEven
  and.b d3,d2
  or.b d4,d2
- move.b d2,(a0) ; half byte done(?)
+ move.b d2,(a0) ; half byte done.
 
-        ; Update screen with ram address:
- QueueStaticDMA ScrRAMbuff,scrbufsz,$0*$20
  rts
 
-; Placeholder files/gamemode data:
 
+; Demo data:
 yscrlen = 40*8*4
 
 CoolTable:
  dc.w 0,yscrlen*1,yscrlen*2,yscrlen*3
+ dc.w yscrlen*4,yscrlen*5,yscrlen*6
+
+ ; please continue table when plane map done
+ ; thanks ^^
  even
 
+	; test art:
 ArtUnc_PlH:
- binclude "Screens/CubeTest/FbArt.unc"
- rept 40*4
+ rept 40*15
  dc.b $22,$22,$22,$22
   rept 3
    dc.b $25,$15,$15,$11
@@ -180,10 +211,12 @@ ArtUnc_PlH:
 ArtUnc_PlH_end:
  even
 
+	; test palette:
 Pal_Custom4TitCrd:
  dc.w $000, $e00, $0e0, $00e, $ee0, $0ee, $e0e
- dc.w $e8e, $8ee, $ee8, $e5e, $eee
+ dc.w $e8e, $8ee, $ee8, $e66, $eee
 
+	; test plane map (incomplete):
 Map_ScrBuf:
  binclude "Screens/CubeTest/TestMap.unc"
  even

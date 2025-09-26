@@ -210,7 +210,7 @@ QueueStaticDMA macro src,length,dest
 	endif ; UseVIntSafeDMA==1
 	movea.w	(DMA_queue_slot).w,a1
 	cmpa.w	#DMA_queue_slot,a1
-	beq.s	.done											; Return if there's no more room in the buffer
+	beq.s	+											; Return if there's no more room in the buffer
 	move.b	#(dmaLength(length)>>8)&$FF,DMAEntry.SizeH(a1)						; Write top byte of size/2
 	move.l	#((dmaLength(length)&$FF)<<24)|dmaSource(src),d0					; Set d0 to bottom byte of size/2 and the low 3 bytes of source/2
 	movep.l	d0,DMAEntry.SizeL(a1)									; Write it all to the queue
@@ -221,7 +221,7 @@ QueueStaticDMA macro src,length,dest
 		move.l	#vdpComm(dest,VRAM,DMA),(a1)+							; Write VDP DMA command for destination address
 	endif
 	move.w	a1,(DMA_queue_slot).w									; Write next queue slot
-.done
++
 	if UseVIntSafeDMA==1
 		move.w	(sp)+,sr									; Restore interrupts to previous state
 	endif ;UseVIntSafeDMA==1
